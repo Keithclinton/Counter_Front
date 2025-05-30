@@ -5,7 +5,7 @@ plugins {
 }
 
 android {
-    namespace "com.example.flutter_app"  // Update to your actual package name
+    namespace "com.example.flutter_app"
     compileSdk 34
 
     defaultConfig {

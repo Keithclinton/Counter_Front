@@ -6,8 +6,8 @@ pluginManagement {
         assert flutterSdkPath != null : "flutter.sdk not set in local.properties"
         return flutterSdkPath
     }
-    settings.ext.flutterSdkPath = flutterSdkPath()
 
+    settings.ext.flutterSdkPath = flutterSdkPath()
     includeBuild("${settings.ext.flutterSdkPath}/packages/flutter_tools/gradle")
 
     plugins {
@@ -15,8 +15,12 @@ pluginManagement {
     }
 }
 
+// ✅ REMOVE THIS ENTIRE BLOCK to avoid errors
+// OR make it lenient (not strict)
 dependencyResolutionManagement {
-    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS) // instead of PREFER_SETTINGS
+    // Disable repository restrictions completely:
+    // repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+
     repositories {
         google()
         mavenCentral()
