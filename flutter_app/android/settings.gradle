@@ -15,16 +15,5 @@ pluginManagement {
     }
 }
 
-// ✅ REMOVE THIS ENTIRE BLOCK to avoid errors
-// OR make it lenient (not strict)
-dependencyResolutionManagement {
-    // Disable repository restrictions completely:
-    // repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
-
-    repositories {
-        google()
-        mavenCentral()
-    }
-}
 
 include ":app"
