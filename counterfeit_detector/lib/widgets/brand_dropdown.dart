@@ -8,9 +8,9 @@ class BrandDropdown extends StatefulWidget {
 }
 
 class _BrandDropdownState extends State<BrandDropdown> {
-  String selectedBrand = 'Black Eagle';
+  String selectedBrand = 'County';
 
-  final List<String> brands = ['Black Eagle', 'Tusker', 'Eagle Extra', 'Brewmaster'];
+  final List<String> brands = ['County', 'Best Gin', 'Hunters Choice'];
 
   @override
   Widget build(BuildContext context) {
