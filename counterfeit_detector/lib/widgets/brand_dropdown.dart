@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 
 class BrandDropdown extends StatefulWidget {
-  const BrandDropdown({super.key});
+  final ValueChanged<String>? onBrandChanged;
+
+  const BrandDropdown({super.key, this.onBrandChanged});
 
   @override
   State<BrandDropdown> createState() => _BrandDropdownState();
@@ -9,7 +11,6 @@ class BrandDropdown extends StatefulWidget {
 
 class _BrandDropdownState extends State<BrandDropdown> {
   String selectedBrand = 'County';
-
   final List<String> brands = ['County', 'Best Gin', 'Hunters Choice'];
 
   @override
@@ -33,6 +34,7 @@ class _BrandDropdownState extends State<BrandDropdown> {
               setState(() {
                 selectedBrand = value;
               });
+              widget.onBrandChanged?.call(value);
             }
           },
           items: brands

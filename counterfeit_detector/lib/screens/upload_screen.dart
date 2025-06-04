@@ -1,13 +1,18 @@
-// lib/screens/upload_screen.dart
 import 'dart:io';
-
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
-
+import 'package:http/http.dart' as http;
 import '../widgets/brand_dropdown.dart';
 
 class UploadScreen extends StatefulWidget {
-  const UploadScreen({super.key});
+  final int currentIndex;
+  final Function(int) onTabTapped;
+
+  const UploadScreen({
+    super.key,
+    required this.currentIndex,
+    required this.onTabTapped,
+  });
 
   @override
   State<UploadScreen> createState() => _UploadScreenState();
@@ -15,11 +20,45 @@ class UploadScreen extends StatefulWidget {
 
 class _UploadScreenState extends State<UploadScreen> {
   File? _imageFile;
+  bool _isLoading = false;
+  String? selectedBrand;
 
   Future<void> pickImage() async {
     final pickedFile = await ImagePicker().pickImage(source: ImageSource.gallery);
     if (pickedFile != null) {
       setState(() => _imageFile = File(pickedFile.path));
+    }
+  }
+
+  Future<void> analyzeImage() async {
+    if (_imageFile == null) return;
+    setState(() => _isLoading = true);
+    try {
+      var request = http.MultipartRequest(
+        'POST',
+        Uri.parse('http://192.168.100.15:5000/predict'),
+      );
+      request.files.add(
+        await http.MultipartFile.fromPath('image', _imageFile!.path),
+      );
+      request.fields['brand'] = selectedBrand ?? 'County';
+
+      final response = await request.send();
+      final responseBody = await response.stream.bytesToString();
+
+      if (response.statusCode == 200) {
+        Navigator.pushNamed(context, '/results', arguments: responseBody);
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Server error: ${response.statusCode} - $responseBody')),
+        );
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error sending image: $e')),
+      );
+    } finally {
+      setState(() => _isLoading = false);
     }
   }
 
@@ -32,12 +71,12 @@ class _UploadScreenState extends State<UploadScreen> {
           padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
           child: Column(
             children: [
-              // Brand Dropdown (reusable widget)
-              const BrandDropdown(),
-
+              BrandDropdown(
+                onBrandChanged: (brand) {
+                  setState(() => selectedBrand = brand);
+                },
+              ),
               const SizedBox(height: 20),
-
-              // Image preview or placeholder
               _imageFile != null
                   ? Container(
                       height: 250,
@@ -63,10 +102,7 @@ class _UploadScreenState extends State<UploadScreen> {
                         style: TextStyle(color: Colors.white70),
                       ),
                     ),
-
               const SizedBox(height: 20),
-
-              // Buttons: Choose Image & Analyze Image
               Row(
                 children: [
                   Expanded(
@@ -88,65 +124,78 @@ class _UploadScreenState extends State<UploadScreen> {
                     child: OutlinedButton(
                       style: OutlinedButton.styleFrom(
                         side: const BorderSide(color: Color(0xFF42A5F5), width: 1.2),
-                        backgroundColor: _imageFile != null ? const Color(0xFF42A5F5) : Colors.grey.shade800,
+                        backgroundColor: _imageFile != null && !_isLoading
+                            ? const Color(0xFF42A5F5)
+                            : Colors.grey.shade800,
                         padding: const EdgeInsets.symmetric(vertical: 14),
                       ),
-                      onPressed: _imageFile != null
-                          ? () => Navigator.pushNamed(context, '/results')
-                          : null,
-                      child: Text(
-                        'Analyze Image',
-                        style: TextStyle(
-                          color: _imageFile != null ? Colors.black : Colors.grey.shade500,
-                          fontSize: 14,
-                        ),
-                      ),
+                      onPressed: _imageFile != null && !_isLoading ? analyzeImage : null,
+                      child: _isLoading
+                          ? const CircularProgressIndicator(color: Colors.black)
+                          : Text(
+                              'Analyze Image',
+                              style: TextStyle(
+                                color: _imageFile != null && !_isLoading
+                                    ? Colors.black
+                                    : Colors.grey.shade500,
+                                fontSize: 14,
+                              ),
+                            ),
                     ),
                   ),
                 ],
               ),
-
               const Spacer(),
-
-              // Bottom Navigation Bar (reuse from ScanScreen if you want)
-              Container(
-                height: 65,
-                decoration: const BoxDecoration(
-                  color: Color(0xFF1B1B1B),
-                  border: Border(top: BorderSide(color: Colors.grey, width: 0.3)),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                  children: [
-                    navItem('Help', false),
-                    navItem('Scan', false),
-                    navItem('History', true),
-                  ],
-                ),
-              ),
             ],
           ),
         ),
       ),
-    );
-  }
-
-  Widget navItem(String label, bool active) {
-    Color activeColor = const Color(0xFF1E88E5);
-    Color inactiveColor = Colors.grey.shade600;
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Text(
-          active ? '⬤' : '○',
-          style: TextStyle(fontSize: 16, color: active ? activeColor : inactiveColor),
-        ),
-        const SizedBox(height: 4),
-        Text(
-          label,
-          style: TextStyle(fontSize: 10, color: active ? activeColor : inactiveColor),
-        ),
-      ],
+      bottomNavigationBar: BottomNavigationBar(
+        backgroundColor: const Color(0xFF1B1B1B),
+        selectedItemColor: const Color(0xFF1E88E5),
+        unselectedItemColor: Colors.grey.shade600,
+        currentIndex: widget.currentIndex,
+        onTap: (index) {
+          widget.onTabTapped(index);
+          if (index != widget.currentIndex) {
+            switch (index) {
+              case 0:
+                Navigator.pushReplacementNamed(context, '/help');
+                break;
+              case 1:
+                Navigator.pushReplacementNamed(context, '/scan');
+                break;
+              case 2:
+                Navigator.pushReplacementNamed(context, '/upload');
+                break;
+              case 3:
+                Navigator.pushReplacementNamed(context, '/results');
+                break;
+            }
+          }
+        },
+        type: BottomNavigationBarType.fixed,
+        selectedFontSize: 12,
+        unselectedFontSize: 12,
+        items: const [
+          BottomNavigationBarItem(
+            icon: Icon(Icons.help, size: 24),
+            label: 'Help',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.camera_alt, size: 24),
+            label: 'Scan',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.upload, size: 24),
+            label: 'Upload',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.history, size: 24),
+            label: 'History',
+          ),
+        ],
+      ),
     );
   }
 }
