@@ -1,17 +1,52 @@
 import 'package:flutter/material.dart';
 
 class BrandDropdown extends StatefulWidget {
+  final String? initialBrand;
   final ValueChanged<String>? onBrandChanged;
 
-  const BrandDropdown({super.key, this.onBrandChanged});
+  const BrandDropdown({
+    super.key,
+    this.initialBrand,
+    this.onBrandChanged,
+  });
 
   @override
   State<BrandDropdown> createState() => _BrandDropdownState();
 }
 
 class _BrandDropdownState extends State<BrandDropdown> {
-  String selectedBrand = 'County';
-  final List<String> brands = ['County', 'Best Gin', 'Hunters Choice'];
+  late String selectedBrand;
+
+  final List<String> brands = [
+    'County',
+    'Best Gin',
+    'Hunters Choice',
+    'Safari Cane',
+    'Chrome',
+    'Legend',
+    'Bond 7',
+    'Kenya Cane',
+    'Bluemoon',
+    'Triple Ace',
+    'Other',
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    selectedBrand = widget.initialBrand ?? brands.first;
+  }
+
+  @override
+  void didUpdateWidget(covariant BrandDropdown oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Sync if parent-provided brand changes
+    if (widget.initialBrand != null && widget.initialBrand != selectedBrand) {
+      setState(() {
+        selectedBrand = widget.initialBrand!;
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -37,12 +72,12 @@ class _BrandDropdownState extends State<BrandDropdown> {
               widget.onBrandChanged?.call(value);
             }
           },
-          items: brands
-              .map((brand) => DropdownMenuItem(
-                    value: brand,
-                    child: Text(brand),
-                  ))
-              .toList(),
+          items: brands.map((brand) {
+            return DropdownMenuItem(
+              value: brand,
+              child: Text(brand),
+            );
+          }).toList(),
         ),
       ),
     );

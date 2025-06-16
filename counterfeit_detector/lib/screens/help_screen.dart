@@ -30,8 +30,9 @@ class HelpScreen extends StatelessWidget {
                 '1. Use the Scan tab to capture an image of the bottle.\n'
                 '2. Use the Upload tab to select an image from your gallery.\n'
                 '3. Select a brand from the dropdown.\n'
-                '4. View results to check authenticity.\n\n'
-                'Contact support: support@counterfeitdetector.com',
+                '4. View results to check authenticity.\n'
+                '5. Review past scans in the History tab.\n\n'
+                'Contact support: judekotiano@gmail.com',
                 style: TextStyle(fontSize: 16, color: Colors.white70),
               ),
               const Spacer(),
@@ -58,7 +59,7 @@ class HelpScreen extends StatelessWidget {
                 Navigator.pushReplacementNamed(context, '/upload');
                 break;
               case 3:
-                Navigator.pushReplacementNamed(context, '/results');
+                Navigator.pushReplacementNamed(context, '/history');
                 break;
             }
           }
