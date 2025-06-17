@@ -47,8 +47,8 @@ class ScanResult(db.Model):
     date = db.Column(db.String(80))
     confidence = db.Column(db.String(20))
     is_authentic = db.Column(db.Boolean)
-    latitude = db.Column(db.Float)
-    longitude = db.Column(db.Float)
+    latitude = db.Column(db.String(20))
+    longitude = db.Column(db.String(20))
     image_url = db.Column(db.String(200))
 
 def allowed_file(filename):
