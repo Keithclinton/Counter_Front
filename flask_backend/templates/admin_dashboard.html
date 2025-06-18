@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Alcohol Detection Admin Map</title>
+    <meta charset="utf-8" />
+    <style>
+        #map {
+            height: 100vh;
+            width: 100%;
+        }
+        body {
+            margin: 0;
+            font-family: Arial, sans-serif;
+        }
+        h2 {
+            padding: 1rem;
+            margin: 0;
+            background: #333;
+            color: white;
+        }
+    </style>
+    <!-- Leaflet CDN -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+</head>
+<body>
+    <h2>Alcohol Detection Map</h2>
+    <div id="map"></div>
+
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+    <script>
+        const map = L.map('map').setView([-1.286389, 36.817223], 6); // Nairobi default center
+
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '&copy; OpenStreetMap contributors',
+            maxZoom: 18,
+        }).addTo(map);
+
+        fetch('http://localhost:5000/api/locations')
+            .then(res => res.json())
+            .then(data => {
+                data.locations.forEach(loc => {
+                    const color = loc.isAuthentic ? 'green' : 'red';
+                    const marker = L.circleMarker([loc.lat, loc.lng], {
+                        color,
+                        radius: 8
+                    }).addTo(map);
+
+                    marker.bindPopup(
+                        `<b>Brand:</b> ${loc.brand}<br>` +
+                        `<b>Batch:</b> ${loc.batchNo}<br>` +
+                        `<b>Date:</b> ${loc.date}<br>` +
+                        `<b>Confidence:</b> ${loc.confidence}<br>` +
+                        `<b>Status:</b> ${loc.isAuthentic ? '✅ Authentic' : '❌ Counterfeit'}<br>` +
+                        `<img src="http://localhost:5000${loc.imageUrl}" alt="Scan" style="width:100px;height:auto;">`
+                    );
+                });
+            })
+            .catch(err => console.error('Map data load error:', err));
+    </script>
+</body>
+</html>
