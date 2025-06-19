@@ -20,7 +20,6 @@ from starlette.templating import Jinja2Templates
 import uvicorn
 from contextlib import asynccontextmanager
 
-# Disable GPU to avoid CUDA errors
 os.environ["CUDA_VISIBLE_DEVICES"] = ""  # Force TensorFlow to use CPU
 
 # Load environment variables
