@@ -1,45 +1,65 @@
-from flask import Flask, request, jsonify, send_from_directory, render_template, session, redirect, url_for
-from werkzeug.utils import secure_filename
 import os
 import uuid
 import logging
 from logging.handlers import RotatingFileHandler
 from datetime import datetime
+from fastapi import FastAPI, File, UploadFile, Form, HTTPException, Depends, Query
+from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+from sqlalchemy import create_engine, Column, Integer, String, Boolean, DateTime, text
+from sqlalchemy.orm import sessionmaker, Session, declarative_base
 from dotenv import load_dotenv
-from flask_sqlalchemy import SQLAlchemy
-from flask_cors import CORS
-from flask_limiter import Limiter
-from flask_limiter.util import get_remote_address
 import tensorflow as tf
 from tensorflow.keras.models import load_model
 import numpy as np
+from starlette.requests import Request
+from starlette.responses import RedirectResponse
+from starlette.staticfiles import StaticFiles
+from starlette.templating import Jinja2Templates
+import uvicorn
+from contextlib import asynccontextmanager
+
+# Disable GPU to avoid CUDA errors
+os.environ["CUDA_VISIBLE_DEVICES"] = ""  # Force TensorFlow to use CPU
 
 # Load environment variables
-load_dotenv(dotenv_path='email.env')
+load_dotenv(dotenv_path='.env')
 
-# Initialize Flask app
-app = Flask(__name__)
-app.secret_key = os.getenv('SECRET_KEY', 'super-secret-key')  # Session key
-CORS(app, resources={r"/*": {"origins": "*"}})
-limiter = Limiter(get_remote_address, app=app, default_limits=["10/minute"])
+# Initialize FastAPI app with lifespan
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup code
+    logger.info("Application starting up")
+    yield
+    # Shutdown code
+    logger.info("Application shutting down")
+
+app = FastAPI(title="Alcohol Detection API", lifespan=lifespan)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # Configuration
-app.config['UPLOAD_FOLDER'] = os.getenv('UPLOAD_FOLDER', 'Uploads/')
-app.config['ALLOWED_EXTENSIONS'] = {'png', 'jpg', 'jpeg'}
-app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URI', 'sqlite:///results.db')
-app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-app.config['MAX_CONTENT_LENGTH'] = int(os.getenv('MAX_CONTENT_LENGTH', 5 * 1024 * 1024))
-app.config['KEEP_IMAGES'] = os.getenv('KEEP_IMAGES', 'false').lower() == 'true'
+UPLOAD_FOLDER = os.getenv('UPLOAD_FOLDER', 'Uploads/')
+ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg'}
+DATABASE_URI = os.getenv('DATABASE_URI', 'sqlite:///results.db')
+MAX_CONTENT_LENGTH = int(os.getenv('MAX_CONTENT_LENGTH', 5 * 1024 * 1024))
+KEEP_IMAGES = os.getenv('KEEP_IMAGES', 'false').lower() == 'true'
+LATENT_DIM = int(os.getenv('LATENT_DIM', 256))
+SIGMA = float(os.getenv('SIGMA', 0.0003))
+TARGET_SIZE = tuple(map(int, os.getenv('TARGET_SIZE', '224,224').split(',')))
+MODEL_PATH = os.getenv('MODEL_PATH', 'alcohol3.keras')
+AUTHENTICITY_THRESHOLD = float(os.getenv('AUTHENTICITY_THRESHOLD', 0.4))
+ADMIN_USERNAME = os.getenv('ADMIN_USERNAME')
+ADMIN_PASSWORD = os.getenv('ADMIN_PASSWORD')
 
 # Ensure upload folder exists
-os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
-
-# Model configuration
-latent_dim = int(os.getenv('LATENT_DIM', 256))
-sigma = float(os.getenv('SIGMA', 0.0003))
-target_size = tuple(map(int, os.getenv('TARGET_SIZE', '224,224').split(',')))
-model_path = os.getenv('MODEL_PATH', 'alcohol3.keras')
-authenticity_threshold = float(os.getenv('AUTHENTICITY_THRESHOLD', 0.6))
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 # Logging setup
 logging.basicConfig(level=logging.INFO)
@@ -48,7 +68,35 @@ handler = RotatingFileHandler('app.log', maxBytes=1000000, backupCount=5)
 handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
 logger.addHandler(handler)
 
-# Load model
+# Database setup
+Base = declarative_base()
+engine = create_engine(DATABASE_URI, connect_args={"check_same_thread": False} if "sqlite" in DATABASE_URI else {})
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+class ScanResult(Base):
+    __tablename__ = 'scan_result'
+    id = Column(Integer, primary_key=True)
+    brand = Column(String(80), nullable=False)
+    batch_no = Column(String(80), nullable=False)
+    date = Column(String(20), nullable=False)
+    confidence = Column(String(20), nullable=False)
+    is_authentic = Column(Boolean, nullable=False)
+    latitude = Column(String(20))
+    longitude = Column(String(20))
+    image_url = Column(String(200))
+    timestamp = Column(DateTime, default=datetime.utcnow)
+
+Base.metadata.create_all(bind=engine)
+
+# Dependency to get DB session
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+# Model loading
 def load_model_from_path(path):
     try:
         model = load_model(path, compile=False)
@@ -58,110 +106,112 @@ def load_model_from_path(path):
         logger.error(f"Error loading model: {e}")
         return None
 
-model = load_model_from_path(model_path)
-
-# Initialize DB
-db = SQLAlchemy(app)
-class ScanResult(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    brand = db.Column(db.String(80), nullable=False)
-    batch_no = db.Column(db.String(80), nullable=False)
-    date = db.Column(db.String(20), nullable=False)
-    confidence = db.Column(db.String(20), nullable=False)
-    is_authentic = db.Column(db.Boolean, nullable=False)
-    latitude = db.Column(db.String(20))
-    longitude = db.Column(db.String(20))
-    image_url = db.Column(db.String(200))
-    timestamp = db.Column(db.DateTime, default=datetime.utcnow)
-
-with app.app_context():
-    db.create_all()
+model = load_model_from_path(MODEL_PATH)
 
 # Utilities
-def allowed_file(filename):
-    return '.' in filename and filename.rsplit('.', 1)[1].lower() in app.config['ALLOWED_EXTENSIONS']
+def allowed_file(filename: str) -> bool:
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
-def is_valid_coordinate(lat, lon):
+def is_valid_coordinate(lat: str, lon: str) -> bool:
     try:
         lat, lon = float(lat), float(lon)
         return -90 <= lat <= 90 and -180 <= lon <= 180
     except:
         return False
 
-def load_image(path):
+def load_image(path: str):
     try:
         image = tf.io.read_file(path)
         image = tf.image.decode_jpeg(image, channels=3)
         image = tf.image.adjust_contrast(image, contrast_factor=1.2)
-        image = tf.image.resize(image, target_size)
+        image = tf.image.resize(image, TARGET_SIZE)
         return image / 255.0
     except Exception as e:
         logger.error(f"Image load error: {e}")
         raise
 
 def run_prediction(image_tensor):
-    pseudo_negative = tf.random.normal([1, latent_dim], mean=0.0, stddev=sigma)
+    pseudo_negative = tf.random.normal([1, LATENT_DIM], mean=0.0, stddev=SIGMA)
     test_probs, _ = model.predict([tf.expand_dims(image_tensor, axis=0), pseudo_negative], verbose=0)
     return float(test_probs[0][0])
 
-def save_to_cloud_storage(file, filename):
+def save_to_cloud_storage(file, filename: str) -> str:
     return f"/Uploads/{filename}"
 
-# Routes
-@app.route('/')
-def home():
-    return jsonify({'message': 'Welcome to the Alcohol Detection API'}), 200
+# Pydantic models for request/response validation
+class AdminLogin(BaseModel):
+    username: str
+    password: str
 
-@app.route('/health')
-def health():
+# Mount static files and templates
+app.mount("/Uploads", StaticFiles(directory=UPLOAD_FOLDER), name="uploads")
+templates = Jinja2Templates(directory="templates")
+
+# Routes
+@app.get("/")
+async def home():
+    return {"message": "Welcome to the Alcohol Detection API"}
+
+@app.get("/health")
+async def health(db: Session = Depends(get_db)):
     try:
-        db.session.execute('SELECT 1')
+        db.execute(text('SELECT 1'))
         db_status = True
     except Exception as e:
         logger.error(f"DB health check failed: {e}")
         db_status = False
-    return jsonify({
-        'model_loaded': model is not None,
-        'database_connected': db_status
-    }), 200 if db_status else 500
+    return {
+        "model_loaded": model is not None,
+        "database_connected": db_status
+    }
 
-@app.route('/predict', methods=['POST'])
-@limiter.limit("10/minute")
-def predict():
+@app.get("/predict/health")
+async def predict_health():
+    try:
+        model_status = model is not None
+        return {
+            "model_loaded": model_status,
+            "message": "Prediction endpoint is healthy" if model_status else "Model not loaded"
+        }
+    except Exception as e:
+        logger.error(f"Predict health check failed: {e}")
+        raise HTTPException(status_code=500, detail="Server error")
+
+@app.post("/predict")
+async def predict(
+    image: UploadFile = File(...),
+    brand: str = Form(default="County"),
+    latitude: str = Form(default="Unknown"),
+    longitude: str = Form(default="Unknown"),
+    db: Session = Depends(get_db)
+):
     filepath = None
     try:
-        if 'image' not in request.files:
-            return jsonify({'error': 'Image file missing'}), 400
+        if not allowed_file(image.filename):
+            raise HTTPException(status_code=400, detail="Invalid file type")
 
-        image_file = request.files['image']
-        if not allowed_file(image_file.filename):
-            return jsonify({'error': 'Invalid file type'}), 400
+        if latitude != "Unknown" and longitude != "Unknown" and not is_valid_coordinate(latitude, longitude):
+            raise HTTPException(status_code=400, detail="Invalid coordinates")
 
-        brand = request.form.get('brand', 'County')
-        latitude = request.form.get('latitude', 'Unknown')
-        longitude = request.form.get('longitude', 'Unknown')
+        filename = f"{uuid.uuid4().hex}_{image.filename}"
+        filepath = os.path.join(UPLOAD_FOLDER, filename)
+        with open(filepath, "wb") as f:
+            content = await image.read()
+            if len(content) > MAX_CONTENT_LENGTH:
+                raise HTTPException(status_code=400, detail="File too large")
+            f.write(content)
 
-        if latitude != 'Unknown' and longitude != 'Unknown' and not is_valid_coordinate(latitude, longitude):
-            return jsonify({'error': 'Invalid coordinates'}), 400
-
-        filename = f"{uuid.uuid4().hex}_{secure_filename(image_file.filename)}"
-        filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-        image_file.save(filepath)
-
-        image_url = save_to_cloud_storage(image_file, filename)
+        image_url = save_to_cloud_storage(image, filename)
         image_tensor = load_image(filepath)
 
-
         if model is None:
-
-            return jsonify({'error': 'Model not loaded'}), 500
-
+            raise HTTPException(status_code=500, detail="Model not loaded")
 
         score = run_prediction(image_tensor)
         today = datetime.now().strftime("%Y-%m-%d")
         batch_no = f"{brand[:3].upper()}-{datetime.now().year}"
         confidence = f"{score:.2%}"
-        is_authentic = score >= authenticity_threshold
+        is_authentic = score >= AUTHENTICITY_THRESHOLD
 
         scan = ScanResult(
             brand=brand,
@@ -173,39 +223,37 @@ def predict():
             longitude=longitude,
             image_url=image_url
         )
-        db.session.add(scan)
-        db.session.commit()
+        db.add(scan)
+        db.commit()
+        db.refresh(scan)
 
-        if not app.config['KEEP_IMAGES'] and filepath and os.path.exists(filepath):
+        if not KEEP_IMAGES and filepath and os.path.exists(filepath):
             os.remove(filepath)
 
-        return jsonify({
-            'id': scan.id,
-            'isAuthentic': is_authentic,
-            'brand': brand,
-            'batchNo': batch_no,
-            'date': today,
-            'confidence': confidence,
-            'latitude': latitude,
-            'longitude': longitude,
-            'imageUrl': image_url,
-            'message': "Authentic" if is_authentic else "Counterfeit detected"
-        }), 200
+        return {
+            "id": scan.id,
+            "is_authentic": is_authentic,
+            "brand": brand,
+            "batch_no": batch_no,
+            "date": today,
+            "confidence": confidence,
+            "latitude": latitude,
+            "longitude": longitude,
+            "image_url": image_url,
+            "message": "Authentic" if is_authentic else "Counterfeit detected"
+        }
 
     except Exception as e:
-        db.session.rollback()
+        db.rollback()
         if filepath and os.path.exists(filepath):
             os.remove(filepath)
         logger.error(f"Prediction error: {e}", exc_info=True)
-        return jsonify({'error': 'Server error'}), 500
+        raise HTTPException(status_code=500, detail=str(e))
 
-@app.route('/api/locations', methods=['GET'])
-def get_locations():
+@app.get("/api/locations")
+async def get_locations(page: int = Query(1), per_page: int = Query(100), db: Session = Depends(get_db)):
     try:
-        page = request.args.get('page', 1, type=int)
-        per_page = request.args.get('per_page', 100, type=int)
-        scans = ScanResult.query.paginate(page=page, per_page=per_page, error_out=False).items
-
+        scans = db.query(ScanResult).offset((page - 1) * per_page).limit(per_page).all()
         locations = []
         for scan in scans:
             try:
@@ -214,52 +262,52 @@ def get_locations():
             except:
                 lat, lng = -1.2284, 36.8722
             locations.append({
-                'lat': lat,
-                'lng': lng,
-                'isAuthentic': scan.is_authentic,
-                'brand': scan.brand,
-                'batchNo': scan.batch_no,
-                'confidence': scan.confidence,
-                'date': scan.date,
-                'imageUrl': scan.image_url
+                "lat": lat,
+                "lng": lng,
+                "is_authentic": scan.is_authentic,
+                "brand": scan.brand,
+                "batch_no": scan.batch_no,
+                "confidence": scan.confidence,
+                "date": scan.date,
+                "image_url": scan.image_url
             })
-        return jsonify({'locations': locations}), 200
+        return {"locations": locations}
     except Exception as e:
         logger.error(f"Location error: {e}", exc_info=True)
-        return jsonify({'error': 'Server error'}), 500
+        raise HTTPException(status_code=500, detail=str(e))
 
-@app.route('/Uploads/<filename>')
-def uploaded_file(filename):
-    try:
-        return send_from_directory(os.path.abspath(app.config['UPLOAD_FOLDER']), filename)
-    except Exception as e:
-        logger.error(f"File serve error: {e}")
-        return jsonify({'error': 'File not found'}), 404
+@app.get("/Uploads/{filename}")
+async def uploaded_file(filename: str):
+    file_path = os.path.join(UPLOAD_FOLDER, filename)
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail="File not found")
+    return FileResponse(file_path)
 
+@app.get("/admin/login", response_class=HTMLResponse)
+async def admin_login_get(request: Request):
+    return templates.TemplateResponse("login.html", {"request": request})
 
-@app.route('/admin/login', methods=['GET', 'POST'])
-def admin_login():
-    if request.method == 'POST':
-        username = request.form.get('username')
-        password = request.form.get('password')
-        if username == os.getenv('ADMIN_USERNAME') and password == os.getenv('ADMIN_PASSWORD'):
-            session['admin_logged_in'] = True
-            return redirect(url_for('admin_map'))
-        else:
-            return render_template('login.html', error="Invalid credentials")
-    return render_template('login.html')
+@app.post("/admin/login", response_class=HTMLResponse)
+async def admin_login_post(request: Request, username: str = Form(...), password: str = Form(...)):
+    if username == ADMIN_USERNAME and password == ADMIN_PASSWORD:
+        response = RedirectResponse(url="/admin/map", status_code=303)
+        response.set_cookie(key="admin_authenticated", value="true")
+        return response
+    return templates.TemplateResponse(
+        "login.html", {"request": request, "error": "Invalid credentials"}
+    )
 
-@app.route('/admin/logout')
-def admin_logout():
-    session.pop('admin_logged_in', None)
-    return redirect(url_for('admin_login'))
+@app.get("/admin/logout")
+async def admin_logout():
+    response = RedirectResponse(url="/admin/login", status_code=303)
+    response.delete_cookie("admin_authenticated")
+    return response
 
-@app.route('/admin/map')
-def admin_map():
-    if not session.get('admin_logged_in'):
-        return redirect(url_for('admin_login'))
-    return send_from_directory('templates', 'admin_dashboard.html')
+@app.get("/admin/map", response_class=HTMLResponse)
+async def admin_map(request: Request):
+    if request.cookies.get("admin_authenticated") != "true":
+        return RedirectResponse(url="/admin/login", status_code=303)
+    return templates.TemplateResponse("admin_dashboard.html", {"request": request})
 
-
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=int(os.getenv('PORT', 5000)), debug=os.getenv('FLASK_ENV', 'development') == 'development')
+if __name__ == "__main__":
+    uvicorn.run(app, host="192.168.100.15", port=5000)
