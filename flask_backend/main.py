@@ -14,6 +14,7 @@ import tensorflow as tf
 from tensorflow.keras.models import load_model
 import numpy as np
 
+from sqlalchemy import text
 from starlette.requests import Request
 from starlette.responses import RedirectResponse
 from starlette.staticfiles import StaticFiles
@@ -45,15 +46,16 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Alcohol Detection API", lifespan=lifespan)
 
+templates = Jinja2Templates(directory="templates")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[os.getenv('ALLOWED_ORIGINS', 'http://localhost:3000')],  
+    allow_origins=[os.getenv('ALLOWED_ORIGINS', 'http://localhost:3000')],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Configuration
 UPLOAD_FOLDER = os.getenv('UPLOAD_FOLDER', 'Uploads/')
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg'}
 MAX_CONTENT_LENGTH = int(os.getenv('MAX_CONTENT_LENGTH', 5 * 1024 * 1024))
@@ -68,7 +70,6 @@ ADMIN_PASSWORD_HASH = os.getenv('ADMIN_PASSWORD_HASH')
 
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
-# Logging setup
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 handler = RotatingFileHandler('app.log', maxBytes=1000000, backupCount=5)
@@ -114,21 +115,19 @@ def load_image(path: str):
 
 def run_prediction(image_tensor):
     try:
-        pseudo_negative = tf.random.normal([1, LATENT_DIM], mean=0.0, stddev=dev=SIGMA)
+        pseudo_negative = tf.random.normal([1, LATENT_DIM], mean=0.0, stddev=SIGMA)
         test_probs, _ = model.predict([tf.expand_dims(image_tensor, axis=0), pseudo_negative], verbose=0)
         return float(test_probs[0][0])
     except Exception as e:
         logger.error(f"Prediction error: {e}")
         raise HTTPException(status_code=500, detail="Prediction failed")
 
-
-# Routes
 @app.get("/")
 async def home():
-    return await {"message": "Welcome to the Alcohol Detection API"}
+    return {"message": "Welcome to the Alcohol Detection API"}
 
 @app.get("/health")
-async def health(db: Session = Depends(get_db)):
+async def health(db: SessionLocal = Depends(get_db)):
     try:
         db.execute(text('SELECT 1'))
         return {
@@ -140,11 +139,9 @@ async def health(db: Session = Depends(get_db)):
         logger.error(f"DB health check failed: {e}")
         return {
             "status": "unhealthy",
-            "model_loaded": model is loaded,
+            "model_loaded": model is not None,
             "database_connected": False
         }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail="Database health check failed")
 
 @app.get("/predict/health")
 async def predict_health():
@@ -159,31 +156,29 @@ async def predict_health():
 @app.post("/predict", response_model=schemas.PredictResponse)
 async def predict(
     image: UploadFile = File(...),
-    data: schemas.PredictRequest = Depends(...),
-    db: Session = Depends(get_db)
+    data: schemas.PredictRequest = Depends(),
+    db: SessionLocal = Depends(get_db)
 ):
     filepath: Optional[str] = None
     try:
-        if not allowed_file(image.filename)):
+        if not allowed_file(image.filename):
             raise HTTPException(status_code=400, detail="Invalid file type")
 
         filename: str = f"{uuid.uuid4().hex}_{image.filename.lower()}"
         filepath = os.path.join(UPLOAD_FOLDER, filename)
+        content = await image.read()
+        if len(content) > MAX_CONTENT_LENGTH:
+            raise HTTPException(status_code=400, detail="File too large")
         with open(filepath, mode="wb") as f:
-            content = await image.read()
-            if len(content) > MAX_CONTENT_LENGTH:
-                raise HTTPException(status_code=400", detail="File too large")
             f.write(content)
 
-        image_url = await save_to_cloud_storage(image, filename)
         image_tensor = load_image(filepath)
-
         if model is None:
             raise HTTPException(status_code=500, detail="Model not loaded")
 
         score = run_prediction(image_tensor)
         today = date.today()
-        batch_no = f"{data.brand[:3].upper()}-{datetime.now().year}-{uuid.uuid4().hex[:4]}"  # Unique batch_no
+        batch_no = f"{data.brand[:3].upper()}-{datetime.now().year}-{uuid.uuid4().hex[:4]}"
         confidence = float(score)
         is_authentic = score >= AUTHENTICITY_THRESHOLD
 
@@ -193,9 +188,9 @@ async def predict(
             date=today,
             confidence=confidence,
             is_authentic=is_authentic,
-            latitude=float(data.latitude if data.latitude != "Unknown" else None),
+            latitude=float(data.latitude) if data.latitude != "Unknown" else None,
             longitude=float(data.longitude) if data.longitude != "Unknown" else None,
-            image_url=image_url
+            image_url=filename
         )
         db.add(scan)
         db.commit()
@@ -213,7 +208,7 @@ async def predict(
             "confidence": f"{confidence:.2%}",
             "latitude": data.latitude,
             "longitude": data.longitude,
-            "image_url": image_url,
+            "image_url": filename,
             "message": "Authentic" if is_authentic else "Counterfeit detected"
         }
 
@@ -229,8 +224,8 @@ async def predict(
 @app.get("/api/locations")
 async def get_locations(
     page: int = Query(1, ge=1),
-    per_page: int = Query(100, le=500),  
-    db: Session = Depends(get_db)
+    per_page: int = Query(100, le=500),
+    db: SessionLocal = Depends(get_db)
 ):
     try:
         scans = (
@@ -238,6 +233,7 @@ async def get_locations(
             .offset((page - 1) * per_page)
             .limit(per_page)
             .all()
+        )
         locations = [
             {
                 "id": scan.id,
@@ -280,7 +276,7 @@ async def admin_login_post(
             key="admin_authenticated",
             value="true",
             httponly=True,
-            secure=True, 
+            secure=True,
             samesite="strict"
         )
         return response
