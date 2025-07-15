@@ -94,7 +94,7 @@ class DatabaseHelper {
     final results = await db.query('results');
     for (var row in results) {
       if (row['image_path'] != null) {
-        await File(row.first['image_path'] as String).delete();
+        await File(row['image_path'] as String).delete();
       }
     }
     await db.delete('results');
