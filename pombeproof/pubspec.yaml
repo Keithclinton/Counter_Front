@@ -32,7 +32,7 @@ dependencies:
     sdk: flutter
   camera: ^0.10.5
   image_picker: ^1.0.0
-  http: ^1.2.0  # For HTTP requests
+  http: ^1.2.1  # For HTTP requests
   path: ^1.8.3
   geolocator: ^12.0.0
   vibration: ^3.1.3
@@ -114,4 +114,3 @@ flutter_launcher_icons:
   ios: true
   image_path: "assets/icon/icon.png"  # Path to your icon image
   # Optional adaptive icon config for Android:
-  

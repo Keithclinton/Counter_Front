@@ -12,6 +12,7 @@ import 'package:counterfeit_detector/widgets/brand_dropdown.dart';
 import 'package:counterfeit_detector/logger.dart';
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+import 'package:counterfeit_detector/screens/scan_screen.dart';
 
 class ScanScreen extends StatefulWidget {
   final int currentIndex;
@@ -178,9 +179,7 @@ class _ScanScreenState extends State<ScanScreen> {
                 children: [
                   BrandDropdown(
                     value: _selectedBrand,
-                    onChanged: (brand) {
-                      setState(() => _selectedBrand = brand);
-                    },
+                    onChanged: (brand) => setState(() => _selectedBrand = brand),
                   ),
                   const SizedBox(height: 16),
                   ElevatedButton(
@@ -221,3 +220,19 @@ class _ScanScreenState extends State<ScanScreen> {
     );
   }
 }
+
+class PermissionException implements Exception {
+  final String message;
+  PermissionException(this.message);
+}
+
+class CameraException implements Exception {
+  final String message;
+  CameraException(this.message);
+}
+
+class NetworkException implements Exception {
+  final String message;
+  NetworkException(this.message);
+}
+

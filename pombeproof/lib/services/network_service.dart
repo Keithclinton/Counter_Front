@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:counterfeit_detector/config.dart';
 import 'package:counterfeit_detector/logger.dart';
@@ -23,14 +24,19 @@ class NetworkService {
 
   Future<Map<String, dynamic>> uploadImage(File image, String brand) async {
     try {
-      final request = http.MultipartRequest('POST', Uri.parse(Config.apiUrl));
+      // Use the correct endpoint for your backend
+      final uri = Uri.parse('${Config.apiUrl}/predict');
+      final request = http.MultipartRequest('POST', uri);
       request.fields['brand'] = brand;
-      request.files.add(await http.MultipartFile.fromPath('image', image.path));
-      final response = await request.send().timeout(Duration(seconds: Config.networkTimeoutSeconds));
+      // Use 'file' if your backend expects 'file', or 'image' if it expects 'image'
+      request.files.add(await http.MultipartFile.fromPath('file', image.path));
+      final streamedResponse = await request.send().timeout(Duration(seconds: Config.networkTimeoutSeconds));
+      final response = await http.Response.fromStream(streamedResponse);
+
       if (response.statusCode == 200) {
-        final responseData = await http.Response.fromStream(response);
         AppLogger().i('Image uploaded successfully');
-        return {'status': 'success', 'data': responseData.body};
+        // Parse the JSON response
+        return json.decode(response.body) as Map<String, dynamic>;
       }
       AppLogger().e('Upload failed: Status ${response.statusCode}');
       throw NetworkException('Failed to upload image: Status ${response.statusCode}');

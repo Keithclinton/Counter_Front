@@ -1,13 +1,13 @@
 import 'package:flutter/material.dart';
 
 class BrandDropdown extends StatefulWidget {
-  final String? initialBrand;
-  final ValueChanged<String>? onBrandChanged;
+  final String? value;
+  final ValueChanged<String?>? onChanged;
 
   const BrandDropdown({
     super.key,
-    this.initialBrand,
-    this.onBrandChanged,
+    this.value,
+    this.onChanged,
   });
 
   @override
@@ -21,22 +21,20 @@ class _BrandDropdownState extends State<BrandDropdown> {
     'County',
     'Best Gin',
     'Hunters Choice',
-    
   ];
 
   @override
   void initState() {
     super.initState();
-    selectedBrand = widget.initialBrand ?? brands.first;
+    selectedBrand = widget.value ?? brands.first;
   }
 
   @override
   void didUpdateWidget(covariant BrandDropdown oldWidget) {
     super.didUpdateWidget(oldWidget);
-    // Sync if parent-provided brand changes
-    if (widget.initialBrand != null && widget.initialBrand != selectedBrand) {
+    if (widget.value != null && widget.value != selectedBrand) {
       setState(() {
-        selectedBrand = widget.initialBrand!;
+        selectedBrand = widget.value!;
       });
     }
   }
@@ -62,7 +60,7 @@ class _BrandDropdownState extends State<BrandDropdown> {
               setState(() {
                 selectedBrand = value;
               });
-              widget.onBrandChanged?.call(value);
+              widget.onChanged?.call(value);
             }
           },
           items: brands.map((brand) {

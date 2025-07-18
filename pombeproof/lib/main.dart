@@ -1,3 +1,5 @@
+import 'dart:io' show Platform;
+import 'package:flutter/foundation.dart'; // <-- Add this line
 import 'package:firebase_core/firebase_core.dart';
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
@@ -11,14 +13,20 @@ import 'package:counterfeit_detector/screens/results_screen.dart';
 import 'package:counterfeit_detector/screens/help_screen.dart';
 import 'package:counterfeit_detector/screens/history_screen.dart';
 import 'package:logger/logger.dart';
+import 'package:counterfeit_detector/services/camera_service.dart'; // <-- Add this import
+import 'firebase_options.dart';
 
 final logger = Logger();
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await Firebase.initializeApp();
-  await FirebaseCrashlytics.instance.setCrashlyticsCollectionEnabled(true);
-  FlutterError.onError = FirebaseCrashlytics.instance.recordFlutterFatalError;
+  await Firebase.initializeApp(
+    options: DefaultFirebaseOptions.currentPlatform,
+  );
+  if (!kIsWeb) {
+    await FirebaseCrashlytics.instance.setCrashlyticsCollectionEnabled(true);
+    FlutterError.onError = FirebaseCrashlytics.instance.recordFlutterFatalError;
+  }
   final cameras = await availableCameras();
   logger.i('Main: App initialized with ${cameras.length} cameras');
   runApp(CounterfeitDetectorApp(cameras: cameras));
@@ -35,6 +43,15 @@ class CounterfeitDetectorApp extends StatefulWidget {
 
 class _CounterfeitDetectorAppState extends State<CounterfeitDetectorApp> {
   int _currentIndex = 1;
+
+  late final CameraService cameraService;
+
+  @override
+  void initState() {
+    super.initState();
+    cameraService = CameraService(widget.cameras); // Pass the whole list
+    cameraService.initializeCamera(); // Initialize the camera
+  }
 
   void _onTabTapped(int index) {
     setState(() {
@@ -155,7 +172,7 @@ class _CounterfeitDetectorAppState extends State<CounterfeitDetectorApp> {
                   context,
                   MaterialPageRoute(
                     builder: (context) => ScanScreen(
-                      cameras: widget.cameras,
+                      cameraService: cameraService,
                       currentIndex: _currentIndex,
                       onTabTapped: _onTabTapped,
                     ),
@@ -284,7 +301,7 @@ class _CounterfeitDetectorAppState extends State<CounterfeitDetectorApp> {
           }
           logger.i('Main: Navigating to ScanScreen');
           return ScanScreen(
-            cameras: widget.cameras,
+            cameraService: cameraService,
             currentIndex: _currentIndex,
             onTabTapped: _onTabTapped,
           );
@@ -292,7 +309,7 @@ class _CounterfeitDetectorAppState extends State<CounterfeitDetectorApp> {
       ),
       routes: {
         '/scan': (context) => ScanScreen(
-              cameras: widget.cameras,
+              cameraService: cameraService,
               currentIndex: _currentIndex,
               onTabTapped: _onTabTapped,
             ),

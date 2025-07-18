@@ -11,6 +11,7 @@ import 'package:counterfeit_detector/widgets/brand_dropdown.dart';
 import 'package:counterfeit_detector/logger.dart';
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+import 'package:image_picker/image_picker.dart';
 
 class UploadScreen extends StatefulWidget {
   final int currentIndex;
@@ -55,7 +56,7 @@ class _UploadScreenState extends State<UploadScreen> {
       }
 
       await _permissionService.requestCameraPermission();
-      final imageFile = await _imagePickerService.pickImage(source: ImageSource.gallery);
+      final imageFile = await _imagePickerService.pickImage(); // <-- No arguments
       if (imageFile == null) return;
 
       final dir = await getApplicationDocumentsDirectory();
@@ -73,11 +74,9 @@ class _UploadScreenState extends State<UploadScreen> {
       if (mounted) {
         _showSnackBar(
           _getUserFriendlyError(e),
-          onSettings: e is ImagePickerException && e.message.contains('permission')
+          onSettings: e.toString().contains('permission')
               ? () => openAppSettings()
-              : e is PermissionException && e.message.contains('permanently')
-                  ? () => openAppSettings()
-                  : null,
+              : null,
         );
         await FirebaseCrashlytics.instance.recordError(e, StackTrace.current);
       }
@@ -89,10 +88,10 @@ class _UploadScreenState extends State<UploadScreen> {
   }
 
   String _getUserFriendlyError(dynamic error) {
-    if (error is ImagePickerException) {
+    if (error.toString().contains('pick image')) {
       return 'Failed to pick image. Please try again.';
-    } else if (error is PermissionException) {
-      return error.message.contains('permanently')
+    } else if (error.toString().contains('permission')) {
+      return error.toString().contains('permanently')
           ? 'Permission permanently denied. Please enable in settings.'
           : 'Permission denied. Please allow access.';
     } else if (error is NetworkException) {

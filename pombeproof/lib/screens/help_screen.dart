@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:counterfeit_detector/screens/scan_screen.dart';
 
 class HelpScreen extends StatelessWidget {
   final int currentIndex;

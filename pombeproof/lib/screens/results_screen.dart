@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:counterfeit_detector/services/result_processor.dart';
 import 'package:counterfeit_detector/logger.dart';
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
+import 'package:counterfeit_detector/screens/scan_screen.dart';
 
 class ResultsScreen extends StatefulWidget {
   final int currentIndex;
