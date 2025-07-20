@@ -3,8 +3,12 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:counterfeit_detector/config.dart';
 import 'package:counterfeit_detector/logger.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
+import 'dart:typed_data';
 
 class NetworkService {
+  final String baseUrl = 'https://fastapi-tf-79035170475.africa-south1.run.app/';
+
   Future<bool> checkServerHealth() async {
     try {
       final response = await http
@@ -24,21 +28,33 @@ class NetworkService {
 
   Future<Map<String, dynamic>> uploadImage(File image, String brand) async {
     try {
-      // Use the correct endpoint for your backend
       final uri = Uri.parse('${Config.apiUrl}/predict');
       final request = http.MultipartRequest('POST', uri);
       request.fields['brand'] = brand;
-      // Use 'file' if your backend expects 'file', or 'image' if it expects 'image'
-      request.files.add(await http.MultipartFile.fromPath('file', image.path));
+
+      if (kIsWeb) {
+        final bytes = await image.readAsBytes();
+        request.files.add(
+          http.MultipartFile.fromBytes(
+            'image', // <-- change from 'file' to 'image'
+            bytes,
+            filename: 'upload.png',
+          ),
+        );
+      } else {
+        request.files.add(
+          await http.MultipartFile.fromPath('image', image.path), // <-- change from 'file' to 'image'
+        );
+      }
+
       final streamedResponse = await request.send().timeout(Duration(seconds: Config.networkTimeoutSeconds));
       final response = await http.Response.fromStream(streamedResponse);
 
       if (response.statusCode == 200) {
         AppLogger().i('Image uploaded successfully');
-        // Parse the JSON response
         return json.decode(response.body) as Map<String, dynamic>;
       }
-      AppLogger().e('Upload failed: Status ${response.statusCode}');
+      AppLogger().e('Upload failed: Status ${response.statusCode}, Body: ${response.body}');
       throw NetworkException('Failed to upload image: Status ${response.statusCode}');
     } catch (e) {
       AppLogger().e('Upload error: $e');

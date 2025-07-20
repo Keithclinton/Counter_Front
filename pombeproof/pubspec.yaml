@@ -114,3 +114,5 @@ flutter_launcher_icons:
   ios: true
   image_path: "assets/icon/icon.png"  # Path to your icon image
   # Optional adaptive icon config for Android:
+
+homepage: https://keithclinton.github.io/gh_pages/

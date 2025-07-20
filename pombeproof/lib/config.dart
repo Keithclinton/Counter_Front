@@ -1,5 +1,5 @@
 class Config {
-  static const String apiUrl = 'https://api.example.com'; // Replace with your actual API URL
+  static const String apiUrl = 'https://fastapi-tf-79035170475.africa-south1.run.app';
+  static const int healthCheckTimeoutSeconds = 5;
   static const int networkTimeoutSeconds = 30;
-  static const int healthCheckTimeoutSeconds = 10;
 }
